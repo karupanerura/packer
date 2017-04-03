@@ -105,6 +105,7 @@ func (s *StepCreateInstance) Run(state multistep.StateBag) multistep.StepAction 
 		DiskType:          c.DiskType,
 		Image:             sourceImage,
 		MachineType:       c.MachineType,
+		Accelerators:      c.Accelerators,
 		Metadata:          metadata,
 		Name:              name,
 		Network:           c.Network,

@@ -34,7 +34,11 @@ type driverGCE struct {
 	ui        packer.Ui
 }
 
-var DriverScopes = []string{"https://www.googleapis.com/auth/compute", "https://www.googleapis.com/auth/devstorage.full_control"}
+var DriverScopes = []string{
+	"https://www.googleapis.com/auth/compute",
+	"https://www.googleapis.com/auth/cloud-platform",
+	"https://www.googleapis.com/auth/devstorage.full_control",
+}
 
 func NewDriverGCE(ui packer.Ui, p string, a *AccountFile) (Driver, error) {
 	var err error
@@ -222,7 +226,7 @@ func (d *driverGCE) GetInstanceMetadata(zone, name, key string) (string, error) 
 
 	for _, item := range instance.Metadata.Items {
 		if item.Key == key {
-			return *item.Value, nil
+			return item.Value, nil
 		}
 	}
 
@@ -297,6 +301,24 @@ func (d *driverGCE) RunInstance(c *InstanceConfig) (<-chan error, error) {
 		return nil, err
 	}
 	// TODO(mitchellh): deprecation warnings
+
+	var guestAccelerators []*compute.AcceleratorConfig
+	if c.Accelerators != nil && len(c.Accelerators) > 0 {
+		guestAccelerators = make([]*compute.AcceleratorConfig, len(c.Accelerators))
+		for i, accelerator := range c.Accelerators {
+			d.ui.Message(fmt.Sprintf("Loading accelerator type: %s", accelerator.Type))
+			acceleratorType, err := d.service.AcceleratorTypes.Get(
+				d.projectId, zone.Name, accelerator.Type).Do()
+			if err != nil {
+				return nil, err
+			}
+
+			guestAccelerators[i] = &compute.AcceleratorConfig{
+				AcceleratorCount: accelerator.Count,
+				AcceleratorType:  acceleratorType.SelfLink,
+			}
+		}
+	}
 
 	networkSelfLink := ""
 	subnetworkSelfLink := ""
@@ -373,10 +395,9 @@ func (d *driverGCE) RunInstance(c *InstanceConfig) (<-chan error, error) {
 	// Build up the metadata
 	metadata := make([]*compute.MetadataItems, len(c.Metadata))
 	for k, v := range c.Metadata {
-		vCopy := v
 		metadata = append(metadata, &compute.MetadataItems{
 			Key:   k,
-			Value: &vCopy,
+			Value: v,
 		})
 	}
 
@@ -397,7 +418,8 @@ func (d *driverGCE) RunInstance(c *InstanceConfig) (<-chan error, error) {
 				},
 			},
 		},
-		MachineType: machineType.SelfLink,
+		MachineType:       machineType.SelfLink,
+		GuestAccelerators: guestAccelerators,
 		Metadata: &compute.Metadata{
 			Items: metadata,
 		},
@@ -454,7 +476,7 @@ func (d *driverGCE) createWindowsPassword(errCh chan<- error, name, zone string,
 	dCopy := string(data)
 
 	instance, err := d.service.Instances.Get(d.projectId, zone, name).Do()
-	instance.Metadata.Items = append(instance.Metadata.Items, &compute.MetadataItems{Key: "windows-keys", Value: &dCopy})
+	instance.Metadata.Items = append(instance.Metadata.Items, &compute.MetadataItems{Key: "windows-keys", Value: dCopy})
 
 	op, err := d.service.Instances.SetMetadata(d.projectId, zone, name, &compute.Metadata{
 		Fingerprint: instance.Metadata.Fingerprint,

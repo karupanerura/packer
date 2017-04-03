@@ -64,6 +64,7 @@ type InstanceConfig struct {
 	DiskType          string
 	Image             *Image
 	MachineType       string
+	Accelerators      []AcceleratorConfig
 	Metadata          map[string]string
 	Name              string
 	Network           string
